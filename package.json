@@ -1,0 +1,96 @@
+{
+  "name": "folder-stash",
+  "displayName": "Folder Stash",
+  "description": "%extension.description%",
+  "version": "0.9.0",
+  "publisher": "ddakker",
+  "license": "Apache-2.0",
+  "icon": "images/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ddakker/vscode-folder-stash.git"
+  },
+  "homepage": "https://github.com/ddakker/vscode-folder-stash#readme",
+  "bugs": {
+    "url": "https://github.com/ddakker/vscode-folder-stash/issues"
+  },
+  "keywords": [
+    "worktree",
+    "git worktree",
+    "close project",
+    "files.exclude",
+    "search exclude",
+    "hide folder",
+    "eclipse"
+  ],
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "folderStash.closeDirectory",
+        "title": "%command.closeDirectory%"
+      },
+      {
+        "command": "folderStash.reopenDirectory",
+        "title": "%command.reopenDirectory%"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "folderStash.closeDirectory",
+          "when": "explorerResourceIsFolder && !explorerResourceIsRoot",
+          "group": "9_folderStash@1"
+        },
+        {
+          "command": "folderStash.reopenDirectory",
+          "when": "workspaceFolderCount > 0",
+          "group": "9_folderStash@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "folderStash.closeDirectory",
+          "when": "false"
+        },
+        {
+          "command": "folderStash.reopenDirectory",
+          "when": "workspaceFolderCount > 0"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Folder Stash",
+      "properties": {
+        "folderStash.excludeFromJava": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "description": "%config.excludeFromJava%"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "node esbuild.mjs --release",
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "node test/build.mjs && node --test \"out-test/*.test.js\""
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "~1.74.0",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.4.0"
+  }
+}

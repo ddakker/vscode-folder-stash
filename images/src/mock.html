@@ -1,0 +1,116 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  body { margin:0; background:#1e1e1e; font:13px "Noto Sans CJK KR", sans-serif; color:#ccc; }
+  .scene { display:none; width:860px; padding:20px; box-sizing:border-box; }
+  body.close .s-close, body.reopen .s-reopen, body.flow .s-flow { display:block; }
+  .win { border:1px solid #3c3c3c; border-radius:6px; overflow:hidden; background:#1e1e1e; position:relative; }
+  .bar { background:#323233; padding:6px 12px; font-size:12px; color:#999; }
+  .row { display:flex; }
+  .side { width:300px; background:#252526; min-height:330px; padding-bottom:10px; }
+  .side h4 { margin:0; padding:8px 14px; font-size:11px; letter-spacing:1px; color:#bbb; }
+  .item { padding:2px 0 2px 0; white-space:nowrap; }
+  .item.sel { background:#04395e; outline:1px solid #007fd4; }
+  .item.dim { color:#666; text-decoration:line-through; }
+  .editor { flex:1; padding:16px; color:#6a9955; font-family:D2Coding, monospace; }
+  .menu { position:absolute; left:190px; top:118px; width:300px; background:#252526; border:1px solid #454545;
+          border-radius:5px; box-shadow:0 4px 16px #000a; padding:4px 0; }
+  .menu div { padding:4px 22px; }
+  .menu hr { border:0; border-top:1px solid #454545; margin:4px 0; }
+  .menu .hi { background:#04395e; color:#fff; }
+  .note { position:absolute; right:14px; top:120px; width:240px; background:#2d2d30; border:1px solid #007fd4;
+          border-radius:6px; padding:10px 12px; color:#ddd; line-height:1.5; }
+  .qp { position:absolute; left:120px; top:40px; width:600px; background:#252526; border:1px solid #454545;
+        border-radius:6px; box-shadow:0 6px 20px #000c; }
+  .qp .in { margin:8px; padding:5px 8px; border:1px solid #007fd4; background:#3c3c3c; color:#999; }
+  .qp .opt { padding:5px 12px; display:flex; align-items:center; gap:8px; }
+  .qp .opt.hi { background:#04395e; }
+  .cb { width:13px; height:13px; border:1px solid #888; border-radius:2px; display:inline-block; text-align:center;
+        font-size:11px; line-height:13px; }
+  .cb.on { background:#007fd4; border-color:#007fd4; color:#fff; }
+  .desc { color:#888; font-size:12px; }
+  .trash { margin-left:auto; color:#aaa; }
+  .ok { padding:6px 12px; text-align:right; }
+  .ok span { background:#0e639c; color:#fff; padding:3px 12px; border-radius:2px; }
+  /* flow */
+  .flow { display:flex; gap:14px; align-items:stretch; }
+  .col { flex:1; background:#252526; border:1px solid #3c3c3c; border-radius:6px; padding:12px; }
+  .col h3 { margin:0 0 8px; font-size:14px; color:#fff; }
+  .arrow { align-self:center; font-size:26px; color:#007fd4; }
+  .tag { display:inline-block; margin:2px 0; padding:1px 6px; border-radius:3px; background:#3a3d41; font-size:12px; }
+  .off { color:#f48771; } .on { color:#89d185; }
+  code { font-family:D2Coding, monospace; color:#ce9178; }
+</style></head>
+<body>
+<div class="scene s-close"><div class="win">
+  <div class="bar" data-t="title"></div>
+  <div class="row">
+    <div class="side"><h4 data-t="explorer"></h4><div id="tree1"></div></div>
+    <div class="editor"></div>
+  </div>
+  <div class="menu">
+    <div data-t="m1"></div><div data-t="m2"></div><hr>
+    <div data-t="m3"></div><div data-t="m4"></div><hr>
+    <div class="hi" data-t="close"></div><div data-t="reopen"></div>
+  </div>
+</div></div>
+
+<div class="scene s-reopen"><div class="win">
+  <div class="bar" data-t="title"></div>
+  <div class="row">
+    <div class="side"><h4 data-t="explorer"></h4><div id="tree2"></div></div>
+    <div class="editor"></div>
+  </div>
+  <div class="qp">
+    <div class="in" data-t="ph"></div>
+    <div class="opt hi"><span class="cb on">✓</span>error-dispatch<span class="trash">📂</span></div>
+    <div class="opt"><span class="cb on">✓</span>haproxy-card</div>
+    <div class="opt"><span class="cb"></span>metric-field-test</div>
+    <div class="opt"><span class="cb"></span>old-worktree <span class="desc" data-t="missing"></span></div>
+    <div class="ok"><span>OK</span></div>
+  </div>
+</div></div>
+
+<div class="scene s-flow"><div class="flow">
+  <div class="col"><h3 data-t="f1h"></h3><div data-t="f1"></div></div>
+  <div class="arrow">→</div>
+  <div class="col"><h3 data-t="f2h"></h3><div data-t="f2"></div></div>
+  <div class="arrow">→</div>
+  <div class="col"><h3 data-t="f3h"></h3><div data-t="f3"></div></div>
+</div></div>
+
+<script>
+const T = {
+  en: { title:'khan-monitoring — Visual Studio Code', explorer:'EXPLORER',
+    m1:'New File...', m2:'New Folder...', m3:'Copy Path', m4:'Find in Folder...',
+    close:'Temporarily Close Directory', reopen:'Reopen Closed Directory',
+    ph:'Select directories to reopen', missing:'(missing)',
+    f1h:'1. Right-click a worktree', f1:'Explorer → <b>Temporarily Close Directory</b><br>(multi-select supported)',
+    f2h:'2. Hidden from', f2:'<span class="tag off">✕ Explorer</span><br><span class="tag off">✕ Find in Files (Ctrl+Shift+F)</span><br>'
+      + '<span class="tag off">✕ Quick Open (Ctrl+P)</span><br><span class="tag off">✕ Java symbols (Ctrl+T)</span>',
+    f3h:'3. Reopen anytime', f3:'Right-click / Command Palette →<br><b>Reopen Closed Directory</b><br>'
+      + '<span class="tag on">✓ back everywhere</span>' },
+  ko: { title:'khan-monitoring — Visual Studio Code', explorer:'탐색기',
+    m1:'새 파일...', m2:'새 폴더...', m3:'경로 복사', m4:'폴더에서 찾기...',
+    close:'디렉토리 임시로 닫기', reopen:'닫은 디렉토리 다시 열기',
+    ph:'다시 열 디렉토리를 선택하세요', missing:'(없음)',
+    f1h:'1. worktree 우클릭', f1:'탐색기 → <b>디렉토리 임시로 닫기</b><br>(여러 개 선택 가능)',
+    f2h:'2. 여기서 빠짐', f2:'<span class="tag off">✕ 탐색기</span><br><span class="tag off">✕ 파일에서 찾기 (Ctrl+Shift+F)</span><br>'
+      + '<span class="tag off">✕ 빠른 열기 (Ctrl+P)</span><br><span class="tag off">✕ Java 기호 (Ctrl+T)</span>',
+    f3h:'3. 언제든 다시 열기', f3:'우클릭 / 명령 팔레트 →<br><b>닫은 디렉토리 다시 열기</b><br>'
+      + '<span class="tag on">✓ 모든 곳에 다시 나타남</span>' },
+};
+const q = new URLSearchParams(location.search);
+const L = T[q.get('lang') || 'en'];
+document.body.className = q.get('scene') || 'close';
+document.querySelectorAll('[data-t]').forEach((e) => { e.innerHTML = L[e.dataset.t]; });
+function tree(id, rows) {
+  document.getElementById(id).innerHTML = rows.map(([d, n, c]) =>
+    `<div class="item ${c || ''}" style="padding-left:${14 + d * 14}px">${n}</div>`).join('');
+}
+tree('tree1', [[0,'▾ khan-monitoring'],[1,'› khan-monitoring-master'],[1,'› disk-svctime-legacy'],
+  [1,'› error-dispatch','sel'],[1,'› haproxy-card','sel'],[1,'› haproxy-rollup'],[1,'› metric-field-test'],
+  [1,'› session-merge-sum'],[1,'› sys-primary-ip'],[1,'  khan-monitoring.code-workspace']]);
+tree('tree2', [[0,'▾ khan-monitoring'],[1,'› khan-monitoring-master'],[1,'› disk-svctime-legacy'],
+  [1,'› haproxy-rollup'],[1,'› session-merge-sum'],[1,'› sys-primary-ip'],[1,'  khan-monitoring.code-workspace']]);
+</script></body></html>

@@ -1,0 +1,6 @@
+{
+  "extension.description": "Temporarily close sub directories (e.g. git worktrees) like Eclipse Close Project, so Explorer, search, Quick Open and Java symbols skip them",
+  "command.closeDirectory": "Temporarily Close Directory",
+  "command.reopenDirectory": "Reopen Closed Directory",
+  "config.excludeFromJava": "Also exclude closed directories from Java project import (java.import.exclusions) so Go to Symbol (Ctrl+T) skips them."
+}
