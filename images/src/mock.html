@@ -3,7 +3,8 @@
 <style>
   body { margin:0; background:#1e1e1e; font:13px "Noto Sans CJK KR", sans-serif; color:#ccc; }
   .scene { display:none; width:860px; padding:20px; box-sizing:border-box; }
-  body.close .s-close, body.reopen .s-reopen, body.flow .s-flow { display:block; }
+  body.close .s-close, body.reopen .s-reopen, body.flow .s-flow, body.dim .s-dim { display:block; }
+  .item.gray { color:#cccccc80; } .badge { float:right; margin-right:12px; color:#cccccc80; }
   .win { border:1px solid #3c3c3c; border-radius:6px; overflow:hidden; background:#1e1e1e; position:relative; }
   .bar { background:#323233; padding:6px 12px; font-size:12px; color:#999; }
   .row { display:flex; }
@@ -55,6 +56,19 @@
   </div>
 </div></div>
 
+<div class="scene s-dim"><div class="win">
+  <div class="bar" data-t="title"></div>
+  <div class="row">
+    <div class="side"><h4 data-t="explorer"></h4><div id="tree3"></div></div>
+    <div class="editor"></div>
+  </div>
+  <div class="menu" style="top:150px">
+    <div data-t="m1"></div><div data-t="m2"></div><hr>
+    <div data-t="m3"></div><div data-t="m4"></div><hr>
+    <div data-t="close"></div><div class="hi" data-t="reopenThis"></div><div data-t="reopen"></div>
+  </div>
+</div></div>
+
 <div class="scene s-reopen"><div class="win">
   <div class="bar" data-t="title"></div>
   <div class="row">
@@ -83,21 +97,21 @@
 const T = {
   en: { title:'khan-monitoring — Visual Studio Code', explorer:'EXPLORER',
     m1:'New File...', m2:'New Folder...', m3:'Copy Path', m4:'Find in Folder...',
-    close:'Temporarily Close Directory', reopen:'Reopen Closed Directory',
+    close:'Temporarily Close Directory', reopen:'Reopen Closed Directory', reopenThis:'Reopen Directory', badge:'C',
     ph:'Select directories to reopen', missing:'(missing)',
     f1h:'1. Right-click a worktree', f1:'Explorer → <b>Temporarily Close Directory</b><br>(multi-select supported)',
-    f2h:'2. Hidden from', f2:'<span class="tag off">✕ Explorer</span><br><span class="tag off">✕ Find in Files (Ctrl+Shift+F)</span><br>'
+    f2h:'2. Grayed out, not searched', f2:'<span class="tag">◐ Explorer: grayed</span><br><span class="tag off">✕ Find in Files (Ctrl+Shift+F)</span><br>'
       + '<span class="tag off">✕ Quick Open (Ctrl+P)</span><br><span class="tag off">✕ Java symbols (Ctrl+T)</span>',
-    f3h:'3. Reopen anytime', f3:'Right-click / Command Palette →<br><b>Reopen Closed Directory</b><br>'
+    f3h:'3. Reopen anytime', f3:'Right-click a gray directory →<br><b>Reopen Directory</b><br>'
       + '<span class="tag on">✓ back everywhere</span>' },
   ko: { title:'khan-monitoring — Visual Studio Code', explorer:'탐색기',
     m1:'새 파일...', m2:'새 폴더...', m3:'경로 복사', m4:'폴더에서 찾기...',
-    close:'디렉토리 임시로 닫기', reopen:'닫은 디렉토리 다시 열기',
+    close:'디렉토리 임시로 닫기', reopen:'닫은 디렉토리 다시 열기', reopenThis:'디렉토리 다시 열기', badge:'닫',
     ph:'다시 열 디렉토리를 선택하세요', missing:'(없음)',
     f1h:'1. worktree 우클릭', f1:'탐색기 → <b>디렉토리 임시로 닫기</b><br>(여러 개 선택 가능)',
-    f2h:'2. 여기서 빠짐', f2:'<span class="tag off">✕ 탐색기</span><br><span class="tag off">✕ 파일에서 찾기 (Ctrl+Shift+F)</span><br>'
+    f2h:'2. 회색 표시 · 검색 제외', f2:'<span class="tag">◐ 탐색기: 회색 표시</span><br><span class="tag off">✕ 파일에서 찾기 (Ctrl+Shift+F)</span><br>'
       + '<span class="tag off">✕ 빠른 열기 (Ctrl+P)</span><br><span class="tag off">✕ Java 기호 (Ctrl+T)</span>',
-    f3h:'3. 언제든 다시 열기', f3:'우클릭 / 명령 팔레트 →<br><b>닫은 디렉토리 다시 열기</b><br>'
+    f3h:'3. 언제든 다시 열기', f3:'회색 디렉토리 우클릭 →<br><b>디렉토리 다시 열기</b><br>'
       + '<span class="tag on">✓ 모든 곳에 다시 나타남</span>' },
 };
 const q = new URLSearchParams(location.search);
@@ -111,6 +125,12 @@ function tree(id, rows) {
 tree('tree1', [[0,'▾ khan-monitoring'],[1,'› khan-monitoring-master'],[1,'› disk-svctime-legacy'],
   [1,'› error-dispatch','sel'],[1,'› haproxy-card','sel'],[1,'› haproxy-rollup'],[1,'› metric-field-test'],
   [1,'› session-merge-sum'],[1,'› sys-primary-ip'],[1,'  khan-monitoring.code-workspace']]);
+document.getElementById('tree3') && (document.getElementById('tree3').innerHTML =
+  [[0,'▾ khan-monitoring'],[1,'› khan-monitoring-master'],[1,'› disk-svctime-legacy'],[1,'› error-dispatch','gray sel'],
+   [1,'› haproxy-card','gray'],[1,'› haproxy-rollup'],[1,'› metric-field-test'],[1,'› session-merge-sum'],
+   [1,'› sys-primary-ip'],[1,'  khan-monitoring.code-workspace']].map(([d, n, c]) =>
+    `<div class="item ${c || ''}" style="padding-left:${14 + d * 14}px">${n}`
+    + `${(c || '').includes('gray') ? `<span class="badge">${L.badge}</span>` : ''}</div>`).join(''));
 tree('tree2', [[0,'▾ khan-monitoring'],[1,'› khan-monitoring-master'],[1,'› disk-svctime-legacy'],
   [1,'› haproxy-rollup'],[1,'› session-merge-sum'],[1,'› sys-primary-ip'],[1,'  khan-monitoring.code-workspace']]);
 </script></body></html>

@@ -2,7 +2,7 @@
   "name": "folder-stash",
   "displayName": "Folder Stash",
   "description": "%extension.description%",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "publisher": "ddakker",
   "license": "Apache-2.0",
   "icon": "images/icon.png",
@@ -40,6 +40,10 @@
         "title": "%command.closeDirectory%"
       },
       {
+        "command": "folderStash.reopenSelected",
+        "title": "%command.reopenSelected%"
+      },
+      {
         "command": "folderStash.reopenDirectory",
         "title": "%command.reopenDirectory%"
       }
@@ -52,14 +56,23 @@
           "group": "9_folderStash@1"
         },
         {
+          "command": "folderStash.reopenSelected",
+          "when": "resourcePath in folderStash.closedPaths",
+          "group": "9_folderStash@2"
+        },
+        {
           "command": "folderStash.reopenDirectory",
           "when": "workspaceFolderCount > 0",
-          "group": "9_folderStash@2"
+          "group": "9_folderStash@3"
         }
       ],
       "commandPalette": [
         {
           "command": "folderStash.closeDirectory",
+          "when": "false"
+        },
+        {
+          "command": "folderStash.reopenSelected",
           "when": "false"
         },
         {
@@ -71,6 +84,20 @@
     "configuration": {
       "title": "Folder Stash",
       "properties": {
+        "folderStash.closeStyle": {
+          "type": "string",
+          "enum": [
+            "dim",
+            "hide"
+          ],
+          "default": "dim",
+          "scope": "window",
+          "enumDescriptions": [
+            "%config.closeStyle.dim%",
+            "%config.closeStyle.hide%"
+          ],
+          "markdownDescription": "%config.closeStyle%"
+        },
         "folderStash.excludeFromJava": {
           "type": "boolean",
           "default": true,

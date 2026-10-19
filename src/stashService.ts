@@ -1,7 +1,11 @@
 import * as path from 'path';
 import {
+  CloseStyle,
+  EXCLUDE_KEYS,
+  ExcludeKey,
   ExcludeMap,
   addExcludeKeys,
+  excludeKeyOf,
   addJavaExclusions,
   reconcile,
   removeExcludeKeys,
@@ -23,8 +27,8 @@ export interface JavaExclusions {
 }
 
 export interface SettingsPort {
-  getFilesExclude(folder: StashFolder): ExcludeMap | undefined;
-  setFilesExclude(folder: StashFolder, value: ExcludeMap | undefined): Promise<void>;
+  getExclude(folder: StashFolder, key: ExcludeKey): ExcludeMap | undefined;
+  setExclude(folder: StashFolder, key: ExcludeKey, value: ExcludeMap | undefined): Promise<void>;
   /** Java 확장이 없어 설정이 등록되지 않았으면 undefined */
   getJavaExclusions(): JavaExclusions | undefined;
   setJavaExclusions(value: string[] | undefined): Promise<void>;
@@ -39,8 +43,13 @@ export interface ChangeResult {
   changed: string[];
   skipped: string[];
   javaChanged: boolean;
-  /** 제거 방향에서 Java 설정 쓰기가 실패한 경우의 오류 (files.exclude 와 목록은 반영됨) */
+  /** 제거 방향에서 Java 설정 쓰기가 실패한 경우의 오류 (exclude 설정과 목록은 반영됨) */
   javaError?: unknown;
+}
+
+export interface CloseOptions {
+  style: CloseStyle;
+  excludeFromJava: boolean;
 }
 
 const NO_CHANGE: ChangeResult = { changed: [], skipped: [], javaChanged: false };
@@ -48,8 +57,8 @@ const NO_CHANGE: ChangeResult = { changed: [], skipped: [], javaChanged: false }
 /**
  * 닫기/열기/상태 맞춤.
  *
- *   close : files.exclude(폴더) → java.import.exclusions(워크스페이스) → workspaceState
- *   reopen: 같은 순서로 제거
+ *   close : search.exclude 또는 files.exclude(폴더) → java.import.exclusions(워크스페이스) → workspaceState
+ *   reopen: 같은 순서로 제거 (두 exclude 설정 모두에서)
  *   모든 작업은 큐로 하나씩 실행한다. 읽기와 쓰기 사이에 다른 작업이 끼어들어 값을 덮어쓰지 않도록 한다.
  */
 export class StashService {
@@ -64,8 +73,8 @@ export class StashService {
     return this.store.get(folder.key);
   }
 
-  close(folder: StashFolder, relPaths: string[], excludeFromJava: boolean): Promise<ChangeResult> {
-    return this.run(() => this.doClose(folder, relPaths, excludeFromJava));
+  close(folder: StashFolder, relPaths: string[], options: CloseOptions): Promise<ChangeResult> {
+    return this.run(() => this.doClose(folder, relPaths, options));
   }
 
   reopen(folder: StashFolder, relPaths: string[]): Promise<ChangeResult> {
@@ -77,7 +86,15 @@ export class StashService {
     return this.run(() => this.doReconcile(folder));
   }
 
-  /** 워크스페이스에서 빠진 폴더의 Java 패턴만 지운다 (files.exclude 와 목록은 그 폴더에 남겨 둔다) */
+  /**
+   * 닫는 방식이 바뀌면 닫아 둔 항목을 다른 exclude 설정으로 옮긴다. changed 는 옮긴 항목이다.
+   * 방식은 작업이 실행될 때 읽는다 (빠르게 여러 번 바꿔도 마지막 값으로 맞춰지도록).
+   */
+  changeStyle(folder: StashFolder, getStyle: () => CloseStyle): Promise<ChangeResult> {
+    return this.run(() => this.doChangeStyle(folder, getStyle()));
+  }
+
+  /** 워크스페이스에서 빠진 폴더의 Java 패턴만 지운다 (exclude 설정과 목록은 그 폴더에 남겨 둔다) */
   releaseJava(folder: StashFolder): Promise<ChangeResult> {
     return this.run(async () => {
       const relPaths = this.store.get(folder.key);
@@ -94,14 +111,15 @@ export class StashService {
     return next;
   }
 
-  private async doClose(folder: StashFolder, relPaths: string[], excludeFromJava: boolean): Promise<ChangeResult> {
+  private async doClose(folder: StashFolder, relPaths: string[], options: CloseOptions): Promise<ChangeResult> {
     const stored = this.store.get(folder.key);
-    const folderValue = this.settings.getFilesExclude(folder);
+    const key = excludeKeyOf(options.style);
+    const folderValue = this.settings.getExclude(folder, key);
     const changed: string[] = [];
     const skipped: string[] = [];
     for (const relPath of unique(relPaths.map(toPosix))) {
-      // 이미 닫았거나, 사용자가 직접 넣어 둔 패턴은 건드리지 않는다
-      if (!relPath || stored.includes(relPath) || folderValue?.[toExcludePattern(relPath)] !== undefined) {
+      // 이미 닫았거나, 사용자가 직접 넣어 둔 패턴은 건드리지 않는다 (다시 열 때 지워지지 않도록 두 설정 모두 확인)
+      if (!relPath || stored.includes(relPath) || this.hasUserPattern(folder, relPath)) {
         skipped.push(relPath);
       } else {
         changed.push(relPath);
@@ -111,14 +129,14 @@ export class StashService {
       return { ...NO_CHANGE, skipped };
     }
 
-    const java = excludeFromJava ? this.settings.getJavaExclusions() : undefined;
+    const java = options.excludeFromJava ? this.settings.getJavaExclusions() : undefined;
     const nextJava = java && addJavaExclusions(java.workspace ?? java.inherited, this.javaPatterns(folder, changed));
-    await this.settings.setFilesExclude(folder, addExcludeKeys(folderValue, changed.map(toExcludePattern)));
+    await this.settings.setExclude(folder, key, addExcludeKeys(folderValue, changed.map(toExcludePattern)));
     if (nextJava) {
       try {
         await this.settings.setJavaExclusions(nextJava);
       } catch (err) {
-        await this.rollbackFilesExclude(folder, folderValue);
+        await this.rollbackExclude(folder, key, folderValue);
         throw err;
       }
     }
@@ -143,7 +161,8 @@ export class StashService {
     if (stored.length === 0) {
       return NO_CHANGE;
     }
-    const { kept, dropped } = reconcile(stored, this.settings.getFilesExclude(folder));
+    const values = EXCLUDE_KEYS.map((key) => this.settings.getExclude(folder, key));
+    const { kept, dropped } = reconcile(stored, values);
     if (dropped.length === 0) {
       return NO_CHANGE;
     }
@@ -152,14 +171,44 @@ export class StashService {
     return { changed: dropped, skipped: [], ...java };
   }
 
+  /**
+   * 새 위치에 먼저 쓰고 이전 위치에서 지운다 (중간에 실패해도 검색에 다시 나타나지 않도록).
+   * 새 위치에 사용자가 넣은 같은 키가 있으면 덮어쓰지 않고 그 항목은 옮기지 않는다.
+   */
+  private async doChangeStyle(folder: StashFolder, style: CloseStyle): Promise<ChangeResult> {
+    const target = excludeKeyOf(style);
+    const source = excludeKeyOf(style === 'dim' ? 'hide' : 'dim');
+    const sourceValue = this.settings.getExclude(folder, source);
+    const targetValue = this.settings.getExclude(folder, target);
+    const moving = this.store.get(folder.key).filter((relPath) => {
+      const pattern = toExcludePattern(relPath);
+      return sourceValue?.[pattern] === true && targetValue?.[pattern] === undefined;
+    });
+    if (moving.length === 0) {
+      return NO_CHANGE;
+    }
+    const patterns = moving.map(toExcludePattern);
+    await this.settings.setExclude(folder, target, addExcludeKeys(targetValue, patterns));
+    await this.settings.setExclude(folder, source, removeExcludeKeys(sourceValue, patterns));
+    return { ...NO_CHANGE, changed: moving };
+  }
+
+  private hasUserPattern(folder: StashFolder, relPath: string): boolean {
+    const pattern = toExcludePattern(relPath);
+    return EXCLUDE_KEYS.some((key) => this.settings.getExclude(folder, key)?.[pattern] !== undefined);
+  }
+
   private async removeFromSettings(
     folder: StashFolder,
     relPaths: string[],
   ): Promise<Pick<ChangeResult, 'javaChanged' | 'javaError'>> {
-    const folderValue = this.settings.getFilesExclude(folder);
-    const nextExclude = removeExcludeKeys(folderValue, relPaths.map(toExcludePattern));
-    if (!sameExclude(folderValue, nextExclude)) {
-      await this.settings.setFilesExclude(folder, nextExclude);
+    const patterns = relPaths.map(toExcludePattern);
+    for (const key of EXCLUDE_KEYS) {
+      const value = this.settings.getExclude(folder, key);
+      const next = removeExcludeKeys(value, patterns);
+      if (!sameExclude(value, next)) {
+        await this.settings.setExclude(folder, key, next);
+      }
     }
     return this.removeJava(folder, relPaths);
   }
@@ -189,9 +238,9 @@ export class StashService {
   }
 
   /** 되돌리기가 실패해도 원래 오류를 던지도록 여기서 삼킨다 */
-  private async rollbackFilesExclude(folder: StashFolder, value: ExcludeMap | undefined): Promise<void> {
+  private async rollbackExclude(folder: StashFolder, key: ExcludeKey, value: ExcludeMap | undefined): Promise<void> {
     try {
-      await this.settings.setFilesExclude(folder, value);
+      await this.settings.setExclude(folder, key, value);
     } catch {
       // 원래 오류를 우선한다
     }

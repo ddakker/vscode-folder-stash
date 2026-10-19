@@ -18,10 +18,17 @@ Right-click one or more directories in the Explorer → **Temporarily Close Dire
 
 ![Explorer context menu](images/close-en.png)
 
+Closed directories **stay in the Explorer, grayed out** with a `C` badge, and are excluded from Find in Files and Quick Open.
+To hide them from the Explorer as well, set `folderStash.closeStyle` to `hide`.
+
 ## Reopen
 
-Right-click anywhere in the Explorer, or run from the Command Palette → **Reopen Closed Directory**.
-Check the directories to reopen and press Enter.
+Right-click a grayed directory → **Reopen Directory** (multi-select supported).
+
+![Right-click a gray directory](images/dim-en.png)
+
+To pick from a list (or in `hide` style), right-click anywhere in the Explorer or run from the Command Palette
+→ **Reopen Closed Directory**. Check the directories to reopen and press Enter.
 
 ![Reopen picker](images/reopen-en.png)
 
@@ -30,10 +37,17 @@ Check the directories to reopen and press Enter.
 
 ## Where closed directories disappear
 
-| Feature | How |
-|---|---|
-| Explorer, Find in Files (Ctrl+Shift+F), Quick Open (Ctrl+P) | `files.exclude` (folder setting) |
-| Go to Symbol in Workspace (Ctrl+T), Go to Definition (Java) | `java.import.exclusions` (only when the Java extension is installed) |
+| Feature | Gray (`dim`, default) | Hide (`hide`) |
+|---|---|---|
+| Explorer | grayed out | hidden |
+| Find in Files (Ctrl+Shift+F), Quick Open (Ctrl+P) | excluded (`search.exclude`) | excluded (`files.exclude`) |
+| Go to Symbol in Workspace (Ctrl+T), Go to Definition (Java) | excluded (`java.import.exclusions`) | same |
+
+- A grayed directory can still be expanded; VS Code has no API to block expanding a folder.
+- Quick Open's **recently opened** list may still show files you opened before closing.
+- The gray color may also appear where the same file is shown elsewhere, such as editor tabs.
+- On remote hosts (Remote-SSH etc.) the gray directory's context menu may not appear;
+  use **Reopen Closed Directory** instead.
 
 - Settings are saved in `.vscode/settings.json`. Only entries added by this extension are added or removed;
   your own entries are kept.
@@ -47,18 +61,22 @@ Check the directories to reopen and press Enter.
 
 | Setting | Default | Description |
 |---|---|---|
+| `folderStash.closeStyle` | `dim` | `dim`: keep grayed in the Explorer / `hide`: hide from the Explorer too. Changing it moves already closed directories |
 | `folderStash.excludeFromJava` | `true` | Also exclude closed directories from Java project import |
 
 ## Behavior
 
 - The closed list is stored per folder in VS Code's workspace storage.
-- If you delete an entry from `files.exclude` in `.vscode/settings.json` yourself, it is treated as reopened
+- If you delete an entry from `search.exclude`/`files.exclude` in `.vscode/settings.json` yourself, it is treated as reopened
   and removed from the list and from the Java exclusions.
-- Paths you already put in `files.exclude` yourself are skipped, so reopening never removes your own entries.
+- Paths you already put in `search.exclude` or `files.exclude` yourself are skipped, so reopening never removes your own entries.
+- Reopening removes this path's `true` entry from both `search.exclude` and `files.exclude`.
+- Changing `closeStyle` or upgrading from an earlier version moves closed entries to the other setting,
+  which modifies `.vscode/settings.json`.
 - Changes to the user-level `java.import.exclusions` are not applied to this folder until everything is reopened.
 - If `.vscode/settings.json` is tracked by git, closing a directory modifies that file
   (and writes absolute paths to `java.import.exclusions`). Don't commit it, or add the file to `.gitignore`.
-- If you edit a `files.exclude` entry to `false` or a `when` clause, it is treated as reopened and left as you wrote it.
+- If you edit an entry to `false` or a `when` clause, it is treated as reopened and left as you wrote it.
 
 ## Build / Install
 

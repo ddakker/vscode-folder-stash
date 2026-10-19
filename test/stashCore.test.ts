@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import {
   addExcludeKeys,
   addJavaExclusions,
+  excludeKeyOf,
+  findClosedAncestor,
   reconcile,
   removeExcludeKeys,
   removeJavaExclusions,
@@ -65,8 +67,23 @@ test('removeJavaExclusions: 사용자가 워크스페이스에 넣은 항목은 
 });
 
 test('reconcile: files.exclude 에서 빠진 항목은 dropped', () => {
-  assert.deepEqual(reconcile(['wt1', 'wt2'], { wt1: true, wt2: true }), { kept: ['wt1', 'wt2'], dropped: [] });
-  assert.deepEqual(reconcile(['wt1', 'wt2'], { wt1: true }), { kept: ['wt1'], dropped: ['wt2'] });
-  assert.deepEqual(reconcile(['wt1'], { wt1: false }), { kept: [], dropped: ['wt1'] });
-  assert.deepEqual(reconcile(['wt1'], undefined), { kept: [], dropped: ['wt1'] });
+  assert.deepEqual(reconcile(['wt1', 'wt2'], [{ wt1: true, wt2: true }]), { kept: ['wt1', 'wt2'], dropped: [] });
+  assert.deepEqual(reconcile(['wt1', 'wt2'], [{ wt1: true }]), { kept: ['wt1'], dropped: ['wt2'] });
+  assert.deepEqual(reconcile(['wt1'], [{ wt1: false }]), { kept: [], dropped: ['wt1'] });
+  assert.deepEqual(reconcile(['wt1'], [undefined]), { kept: [], dropped: ['wt1'] });
+  assert.deepEqual(reconcile(['wt1'], [undefined, { wt1: true }]), { kept: ['wt1'], dropped: [] });
+});
+
+test('findClosedAncestor: 자신과 하위만 찾고 이름이 겹치는 형제는 제외', () => {
+  const closed = ['wt1', 'sub/wt2'];
+  assert.equal(findClosedAncestor(closed, 'wt1'), 'wt1');
+  assert.equal(findClosedAncestor(closed, 'wt1/src/A.java'), 'wt1');
+  assert.equal(findClosedAncestor(closed, 'sub\\wt2\\pom.xml'), 'sub/wt2');
+  assert.equal(findClosedAncestor(closed, 'wt10'), undefined);
+  assert.equal(findClosedAncestor(closed, 'sub'), undefined);
+});
+
+test('excludeKeyOf: dim 은 search.exclude, hide 는 files.exclude', () => {
+  assert.equal(excludeKeyOf('dim'), 'search.exclude');
+  assert.equal(excludeKeyOf('hide'), 'files.exclude');
 });

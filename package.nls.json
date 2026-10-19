@@ -1,6 +1,10 @@
 {
-  "extension.description": "Temporarily close sub directories (e.g. git worktrees) like Eclipse Close Project, so Explorer, search, Quick Open and Java symbols skip them",
+  "extension.description": "Temporarily close sub directories (e.g. git worktrees) like Eclipse Close Project: they stay grayed in the Explorer and are excluded from search, Quick Open and Java symbols",
   "command.closeDirectory": "Temporarily Close Directory",
   "command.reopenDirectory": "Reopen Closed Directory",
-  "config.excludeFromJava": "Also exclude closed directories from Java project import (java.import.exclusions) so Go to Symbol (Ctrl+T) skips them."
+  "config.excludeFromJava": "Also exclude closed directories from Java project import (java.import.exclusions) so Go to Symbol (Ctrl+T) skips them.",
+  "command.reopenSelected": "Reopen Directory",
+  "config.closeStyle": "How closed directories appear in the Explorer. Both styles exclude them from Find in Files and Quick Open.",
+  "config.closeStyle.dim": "Keep them in the Explorer, grayed out (search.exclude). Like Eclipse Close Project.",
+  "config.closeStyle.hide": "Hide them from the Explorer too (files.exclude)."
 }

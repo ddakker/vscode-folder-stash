@@ -1,22 +1,21 @@
 import * as vscode from 'vscode';
-import { ExcludeMap } from './stashCore';
+import { ExcludeKey, ExcludeMap } from './stashCore';
 import { JavaExclusions, SettingsPort, StashFolder } from './stashService';
 
-const FILES_EXCLUDE = 'files.exclude';
 const JAVA_EXCLUSIONS = 'java.import.exclusions';
 
 /**
  * get() 은 기본값·사용자·폴더 값을 합친 결과라서 쓰기에 쓰지 않고 inspect() 로 계층별 값을 읽는다.
- * - files.exclude: resource 범위 → WorkspaceFolder 대상
+ * - files.exclude / search.exclude: resource 범위 → WorkspaceFolder 대상
  * - java.import.exclusions: window 범위 → Workspace 대상 (폴더 하나로 열면 둘 다 .vscode/settings.json)
  */
 export class VscodeSettings implements SettingsPort {
-  getFilesExclude(folder: StashFolder): ExcludeMap | undefined {
-    return config(folder).inspect<ExcludeMap>(FILES_EXCLUDE)?.workspaceFolderValue;
+  getExclude(folder: StashFolder, key: ExcludeKey): ExcludeMap | undefined {
+    return config(folder).inspect<ExcludeMap>(key)?.workspaceFolderValue;
   }
 
-  async setFilesExclude(folder: StashFolder, value: ExcludeMap | undefined): Promise<void> {
-    await config(folder).update(FILES_EXCLUDE, value, vscode.ConfigurationTarget.WorkspaceFolder);
+  async setExclude(folder: StashFolder, key: ExcludeKey, value: ExcludeMap | undefined): Promise<void> {
+    await config(folder).update(key, value, vscode.ConfigurationTarget.WorkspaceFolder);
   }
 
   /** 기본값이 없으면 Java 확장이 꺼져 있어 등록되지 않은 설정이다 (쓰면 오류) */

@@ -2,6 +2,15 @@
 
 export type ExcludeMap = Record<string, unknown>;
 
+/** dim: 탐색기에는 회색으로 남기고 검색에서만 뺀다. hide: 탐색기에서도 숨긴다 */
+export type CloseStyle = 'dim' | 'hide';
+export type ExcludeKey = 'files.exclude' | 'search.exclude';
+export const EXCLUDE_KEYS: ExcludeKey[] = ['files.exclude', 'search.exclude'];
+
+export function excludeKeyOf(style: CloseStyle): ExcludeKey {
+  return style === 'hide' ? 'files.exclude' : 'search.exclude';
+}
+
 /** files.exclude 키 — 워크스페이스 폴더 기준 상대 경로 glob */
 export function toExcludePattern(relPath: string): string {
   // VS Code glob 은 백슬래시 escape 를 지원하지 않아 문자 클래스로 감싼다.
@@ -68,21 +77,27 @@ export function removeJavaExclusions(
   return sameItems(next, inherited) ? undefined : next;
 }
 
-/** settings.json 우선: files.exclude 에서 사라진 항목은 사용자가 직접 연 것으로 본다 */
+/** settings.json 우선: 어느 exclude 설정에서도 true 가 아닌 항목은 사용자가 직접 연 것으로 본다 */
 export function reconcile(
   stored: string[],
-  folderValue: ExcludeMap | undefined,
+  values: (ExcludeMap | undefined)[],
 ): { kept: string[]; dropped: string[] } {
   const kept: string[] = [];
   const dropped: string[] = [];
   for (const relPath of stored) {
-    if (folderValue?.[toExcludePattern(relPath)] === true) {
+    if (values.some((value) => value?.[toExcludePattern(relPath)] === true)) {
       kept.push(relPath);
     } else {
       dropped.push(relPath);
     }
   }
   return { kept, dropped };
+}
+
+/** relPath 가 닫은 디렉토리 자신이거나 그 아래이면 그 닫은 디렉토리를 돌려준다 */
+export function findClosedAncestor(closed: string[], relPath: string): string | undefined {
+  const target = toPosix(relPath);
+  return closed.find((dir) => target === dir || target.startsWith(dir + '/'));
 }
 
 export function sameItems(a: string[] | undefined, b: string[] | undefined): boolean {

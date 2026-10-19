@@ -1,6 +1,6 @@
 # Folder Stash — 하위 디렉토리 임시 닫기/열기 (계획)
 
-- 상태: ✅ 구현 완료 · 0.9.0 (단위 테스트 24개 통과, 사용자 수동 확인 완료)
+- 상태: ✅ 구현 완료 · 0.10.0 (단위 테스트 37개 통과, 수동 확인 완료)
 - 작성: 2026-10-14 (KST)
 - 참고: [artern/vscode-workspace-folder-stash](https://github.com/artern/vscode-workspace-folder-stash) v0.1.1
 
@@ -14,12 +14,14 @@ artern 확장은 `.code-workspace` 의 `folders[]` ↔ `stashedFolders[]` 를 �
 목표: 이클립스의 Close/Open Project 처럼, 열어 둔 폴더의 **하위 디렉토리**를 우클릭으로 임시로 닫고 다시 연다.
 닫힌 디렉토리는 아래 기능에서 빠져야 한다.
 
-| 기능 | 빠지는 방법 |
-|---|---|
-| 탐색기 | `files.exclude` |
-| 파일에서 찾기 (Ctrl+Shift+F) | `files.exclude` (검색 창 "제외 설정 및 무시 파일 사용"이 켜져 있을 때) |
-| 빠른 열기 (Ctrl+P) | `files.exclude` |
-| 작업 영역의 기호로 이동 (Ctrl+T), 정의로 이동 | `java.import.exclusions` (redhat.java) |
+| 기능 | 회색 `dim` (기본, 12장) | 숨김 `hide` |
+|---|---|---|
+| 탐색기 | 회색 표시 (FileDecoration) | `files.exclude` 로 숨김 |
+| 파일에서 찾기 (Ctrl+Shift+F) | `search.exclude` | `files.exclude` |
+| 빠른 열기 (Ctrl+P) | `search.exclude` | `files.exclude` |
+| 작업 영역의 기호로 이동 (Ctrl+T), 정의로 이동 | `java.import.exclusions` (redhat.java) | 같음 |
+
+파일에서 찾기는 검색 창 "제외 설정 및 무시 파일 사용"이 켜져 있을 때만 제외된다.
 
 ## 2. 결정 사항 (eng review)
 
@@ -40,9 +42,10 @@ artern 확장은 `.code-workspace` 의 `folders[]` ↔ `stashedFolders[]` 를 �
  "디렉토리 임시로 닫기"               "닫은 디렉토리 다시 열기"
         │                                     │
         ▼                                     ▼
- extension.ts ── closeDirs(uris) ──┐   reopenQuickPick.ts (다중 선택, 🗑 목록에서 제거)
-                                   ▼          │
-                            stashService.ts ◄─┘
+ extension.ts ── closeDirs(uris) ──┐   reopenQuickPick.ts (다중 선택, 📂 바로 다시 열기)
+   │ folders.ts (워크스페이스 폴더)  ▼          │
+   │                        stashService.ts ◄─┘  (Promise 큐로 작업을 하나씩 실행)
+   └─ closedView.ts: 탐색기 회색 표시 + 컨텍스트 키 folderStash.closedPaths (stashStore 변경 시 갱신)
                  ┌─────────────────┼──────────────────┐
                  ▼                 ▼                  ▼
           stashStore.ts     settingsWriter.ts     stashCore.ts (순수 함수, vscode 의존 없음)
@@ -69,8 +72,9 @@ uris ─► 루트 폴더 자신이면 제외 ─► 상대 경로 계산 ─►
 
 ### 3.3 상태 맞춤 (D8)
 
-실행 시점: `activate`, `onDidChangeConfiguration('files.exclude')`.
-확장이 직접 쓰는 동안에는 `isWriting` 플래그로 맞춤을 건너뛴다 (무한 반복 방지).
+실행 시점: `activate`, `onDidChangeConfiguration('files.exclude' | 'search.exclude' | 'folderStash.closeStyle')`,
+워크스페이스 폴더 변경. 모든 작업은 큐로 하나씩 실행되므로, 확장이 쓴 설정 때문에 생긴 이벤트는 쓰기가 끝난 뒤
+맞춤을 실행하고 아무것도 바꾸지 않는다. 표의 "files.exclude 폴더 값"은 두 exclude 설정 중 하나라도 `true` 인지로 본다.
 
 | 저장된 목록 | files.exclude 폴더 값 | 디스크 | 처리 |
 |---|---|---|---|
@@ -144,7 +148,6 @@ COVERAGE: 0/17 (신규 프로젝트) — 모두 구현과 함께 작성
 
 - Wide Search(vscode-popup-search-extenstion)의 exclude 지원 (D5)
 - 소스 제어(Git) 화면에서 worktree 숨기기 (`git.ignoredRepositories`)
-- 탐색기에서 닫힌 디렉토리를 회색으로 남겨 두기 (files.exclude 로 숨기면 탐색기에 표시할 수 없음)
 - 상태 표시줄의 닫힌 개수 표시
 - 마켓플레이스 배포 (`install.sh` 로 vsix 를 로컬에 설치)
 
@@ -165,12 +168,14 @@ COVERAGE: 0/17 (신규 프로젝트) — 모두 구현과 함께 작성
 | 파일 | 역할 |
 |---|---|
 | src/stashCore.ts | 순수 함수 (패턴 생성·escape, 설정 병합, 상태 맞춤) |
-| src/stashService.ts | 닫기/열기/맞춤, 쓰기 실패 시 files.exclude 롤백, writing 가드 |
+| src/stashService.ts | 닫기/열기/맞춤/방식 변경, 작업 직렬화 큐, 쓰기 실패 시 exclude 롤백 |
 | src/settingsWriter.ts | `inspect()`/`update()` 어댑터 |
-| src/stashStore.ts | workspaceState 어댑터 (`folderStash.closed:<폴더 URI>`) |
-| src/reopenQuickPick.ts | 다시 열기 QuickPick (다중 선택, 🗑, `(없음)`) |
+| src/stashStore.ts | workspaceState 어댑터 (`folderStash.closed:<폴더 URI>`), 변경 시 onChange |
+| src/closedView.ts | 탐색기 회색 표시(FileDecorationProvider), 컨텍스트 키 `folderStash.closedPaths` |
+| src/folders.ts | 워크스페이스 폴더 → StashFolder 변환 |
+| src/reopenQuickPick.ts | 다시 열기 QuickPick (다중 선택, 📂 바로 다시 열기, `(없음)`) |
 | src/extension.ts | 명령·이벤트 등록, Java 다시 불러오기 알림 |
-| test/*.test.ts | 단위 24개 (`npm test`) |
+| test/*.test.ts | 단위 37개 (`npm test`) |
 | package.sh | node_modules 없으면 `npm install` → 타입 체크·테스트 → vsix 생성 (실패 시 중단) |
 | install.sh | `package.sh` 실행 후 `code --install-extension --force` (같은 버전 덮어쓰기) |
 
@@ -210,6 +215,50 @@ COVERAGE: 0/17 (신규 프로젝트) — 모두 구현과 함께 작성
 - README 이미지: `images/src/mock.html` 을 Chrome headless 로 찍은 PNG (`?lang=en|ko&scene=close|reopen|flow`)
   - vsix 에서는 빼고, vsce 가 GitHub raw 주소로 바꾼다 → **GitHub push 후 퍼블리시**
 - 퍼블리시: `./package.sh` → `vsce publish --packagePath folder-stash-0.9.0.vsix` (publisher `ddakker` PAT 필요)
+
+## 12. 회색 표시(dim) 방식 (2026-10-19)
+
+요구: 이클립스 프로젝트 닫기처럼 탐색기에는 흐리게 남기고, 파일 검색·내용 검색에서는 빠져야 한다.
+
+| 항목 | 내용 |
+|---|---|
+| 설정 | `folderStash.closeStyle`: `dim`(기본) / `hide` |
+| dim | `search.exclude`(폴더) 에 쓴다. 탐색기는 그대로, 파일에서 찾기·빠른 열기에서 제외 |
+| hide | 기존과 같이 `files.exclude` |
+| 회색 표시 | `FileDecorationProvider` (`src/closedView.ts`). 색 `disabledForeground`, 닫은 디렉토리에 배지 `닫`/`C` + 툴팁, 하위는 색만 |
+| 우클릭 다시 열기 | `folderStash.reopenSelected`. 조건 `resourcePath in folderStash.closedPaths` (setContext 로 닫은 절대 경로 배열) |
+| 방식 변경 | 설정이 바뀌거나 시작할 때 맞춤(reconcile) 후 닫아 둔 항목을 다른 exclude 설정으로 옮김 (`changeStyle`) |
+| 옮기는 규칙 | 새 위치에 먼저 쓰고 이전 위치에서 제거. 새 위치에 사용자 키(`true`/`false`/`when`)가 있으면 덮어쓰지 않고 그 항목은 옮기지 않음. 방식 값은 큐에서 실행될 때 읽음 |
+| 다시 열기·맞춤 | 두 exclude 설정 모두에서 값이 `true` 인 우리 키만 제거. 어느 쪽에도 `true` 가 없으면 직접 연 것으로 봄 |
+
+확인한 근거 (설치된 VS Code 1.141 번들)
+- `search.exclude` 설명: "excluding files and folders in fulltext searches and file search in quick open"
+- `search.exclude` 의 scope 는 5 = RESOURCE (`files.encoding` 이 6 = LANGUAGE_OVERRIDABLE 인 것과 비교) → 폴더 설정에 쓸 수 있음
+
+한계
+- 회색 디렉토리도 펼칠 수 있음 (펼치기를 막는 API 없음)
+- 빠른 열기의 최근에 연 파일 목록은 상대 경로 패턴으로는 걸러지지 않음
+- 회색 디렉토리에도 "디렉토리 임시로 닫기" 메뉴가 보임 (`not in` 조건이 engines 1.74 에서 지원되는지 확인하지 못해 쓰지 않음). 누르면 "이미 닫힘" 안내
+- 다시 열기는 두 exclude 설정에서 모두 `true` 키를 지운다. 닫은 뒤 사용자가 다른 쪽 설정에 같은 키를 직접 넣었다면 함께 지워짐 (드문 경우라 문서로만 안내)
+- 닫을 때 두 exclude 설정 중 하나에 사용자 키가 이미 있으면 건너뜀 (다시 열기 때 사용자 키를 지우지 않기 위한 의도된 동작)
+- 회색 색상은 편집기 탭 등 같은 파일이 보이는 다른 곳에도 적용될 수 있음
+- 원격(Remote-SSH 등)에서는 `resourcePath` 형식이 달라 회색 디렉토리 우클릭 메뉴가 안 보일 수 있음 (확인 못 함). 이 경우 "닫은 디렉토리 다시 열기" 목록 사용
+- 0.9.0 에서 `files.exclude` 로 닫아 둔 항목은 업데이트 후 시작 시 `search.exclude` 로 옮겨져 회색으로 보임
+
+코드 리뷰 반영 (2026-10-19)
+- 방식 변경 시 옮겨 갈 설정의 사용자 키 보존, 방식 값을 실행 시점에 읽음, 방식 변경 시에도 맞춤 먼저 실행
+- 안내 문구(`alreadyClosed`, 툴팁, 확장 설명)를 dim 기준으로 수정, 버전 0.10.0
+- 테스트 추가: hide→dim 업그레이드, 사용자 키 보존, 실행 시점 방식, 두 설정 동시 제거, ClosedView 표시·컨텍스트 키, store onChange
+
+수동 체크리스트 (dim)
+1. 창 다시 로드 → 이전에 숨겼던 디렉토리가 회색 + `닫` 으로 보이는지
+2. `.vscode/settings.json` 에 `search.exclude` 로 옮겨졌고 `files.exclude` 의 기존 항목은 그대로인지
+3. 열린 디렉토리 우클릭 → 디렉토리 임시로 닫기 → 회색으로 바뀌는지
+4. Ctrl+Shift+F 로 회색 디렉토리에만 있는 문자열 검색 → 결과 없음
+5. Ctrl+P 로 회색 디렉토리에만 있는 파일 이름 검색 → 결과 없음
+6. Ctrl+T 로 회색 디렉토리에만 있는 클래스 검색 → 결과 없음 (Java 다시 불러오기 후)
+7. 회색 디렉토리 우클릭 → 디렉토리 다시 열기 → 색이 돌아오고 4~5 에서 다시 검색됨
+8. 설정 `folderStash.closeStyle` 을 `hide` 로 → 닫은 디렉토리가 탐색기에서 사라짐, 다시 `dim` 으로 → 회색으로 돌아옴
 
 ## GSTACK REVIEW REPORT
 

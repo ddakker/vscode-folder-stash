@@ -1,8 +1,11 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { ClosedView } from './closedView';
+import { toStashFolder, workspaceFolders } from './folders';
 import { t } from './messages';
 import { showReopenQuickPick } from './reopenQuickPick';
 import { VscodeSettings } from './settingsWriter';
+import { CloseStyle, toPosix } from './stashCore';
 import { ChangeResult, StashFolder, StashService } from './stashService';
 import { WorkspaceStateStore } from './stashStore';
 
@@ -14,11 +17,19 @@ const JAVA_RELOAD_COMMAND = {
 };
 
 export function activate(context: vscode.ExtensionContext): void {
-  const service = new StashService(new VscodeSettings(), new WorkspaceStateStore(context.workspaceState));
+  let view: ClosedView | undefined;
+  const store = new WorkspaceStateStore(context.workspaceState, () => view?.refresh());
+  const service = new StashService(new VscodeSettings(), store);
+  view = new ClosedView(service);
 
   context.subscriptions.push(
+    view,
+    vscode.window.registerFileDecorationProvider(view),
     vscode.commands.registerCommand('folderStash.closeDirectory', (uri?: vscode.Uri, uris?: vscode.Uri[]) =>
-      closeDirectories(service, uris?.length ? uris : uri ? [uri] : []),
+      closeDirectories(service, selectedUris(uri, uris)),
+    ),
+    vscode.commands.registerCommand('folderStash.reopenSelected', (uri?: vscode.Uri, uris?: vscode.Uri[]) =>
+      reopenSelected(service, selectedUris(uri, uris)),
     ),
     vscode.commands.registerCommand('folderStash.reopenDirectory', () =>
       showReopenQuickPick(service, workspaceFolders(), (folder, relPaths) =>
@@ -26,7 +37,9 @@ export function activate(context: vscode.ExtensionContext): void {
       ),
     ),
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration('files.exclude')) {
+      if (e.affectsConfiguration('folderStash.closeStyle')) {
+        void syncAll(service);
+      } else if (e.affectsConfiguration('files.exclude') || e.affectsConfiguration('search.exclude')) {
         void reconcileAll(service);
       }
     }),
@@ -35,10 +48,12 @@ export function activate(context: vscode.ExtensionContext): void {
         handleResult(await service.releaseJava(toStashFolder(removed)).catch(showError));
       }
       await reconcileAll(service);
+      view?.refresh();
     }),
   );
 
-  void reconcileAll(service);
+  view.refresh();
+  void syncAll(service);
 }
 
 export function deactivate(): void {}
@@ -50,13 +65,13 @@ async function closeDirectories(service: StashService, uris: vscode.Uri[]): Prom
     return;
   }
 
-  const excludeFromJava = shouldExcludeFromJava();
+  const options = { style: closeStyle(), excludeFromJava: shouldExcludeFromJava() };
   let closed = 0;
   let javaChanged = false;
   const skipped: string[] = [];
   try {
     for (const { folder, name, relPaths } of groups.values()) {
-      const result = await service.close(folder, relPaths, excludeFromJava);
+      const result = await service.close(folder, relPaths, options);
       closed += result.changed.length;
       javaChanged ||= result.javaChanged;
       skipped.push(...result.skipped.map((relPath) => (groups.size > 1 ? `${name}/${relPath}` : relPath)));
@@ -82,6 +97,21 @@ async function reopenDirectories(service: StashService, folder: StashFolder, rel
     void vscode.window.showInformationMessage(t('reopened', result.changed.length));
   }
   handleResult(result);
+}
+
+/** 탐색기에서 회색 디렉토리를 우클릭해 바로 다시 연다 */
+async function reopenSelected(service: StashService, uris: vscode.Uri[]): Promise<void> {
+  for (const { folder, relPaths } of (await groupDirectoriesByFolder(uris)).values()) {
+    await reopenDirectories(service, folder, relPaths.map(toPosix));
+  }
+}
+
+/** 직접 지운 항목을 먼저 목록에서 빼고, 남은 항목을 현재 닫는 방식의 설정으로 옮긴다 */
+async function syncAll(service: StashService): Promise<void> {
+  await reconcileAll(service);
+  for (const { folder } of workspaceFolders()) {
+    await service.changeStyle(folder, closeStyle).catch(showError);
+  }
 }
 
 /** 폴더 하나가 실패해도 나머지 폴더는 계속 맞춘다 */
@@ -136,12 +166,12 @@ async function isDirectory(uri: vscode.Uri): Promise<boolean> {
   }
 }
 
-function workspaceFolders(): { folder: StashFolder; name: string }[] {
-  return (vscode.workspace.workspaceFolders ?? []).map((wf) => ({ folder: toStashFolder(wf), name: wf.name }));
+function selectedUris(uri?: vscode.Uri, uris?: vscode.Uri[]): vscode.Uri[] {
+  return uris?.length ? uris : uri ? [uri] : [];
 }
 
-function toStashFolder(workspaceFolder: vscode.WorkspaceFolder): StashFolder {
-  return { key: workspaceFolder.uri.toString(), fsPath: workspaceFolder.uri.fsPath };
+function closeStyle(): CloseStyle {
+  return vscode.workspace.getConfiguration('folderStash').get<CloseStyle>('closeStyle', 'dim');
 }
 
 /** Java 확장이 없으면 java.import.exclusions 를 쓰지 않는다 */

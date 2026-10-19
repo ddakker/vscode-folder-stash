@@ -7,6 +7,7 @@ images/src/**
 images/close-*.png
 images/reopen-*.png
 images/flow-*.png
+images/dim-*.png
 .vscode/**
 .claude/**
 esbuild.mjs

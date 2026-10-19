@@ -1,6 +1,10 @@
 {
-  "extension.description": "이클립스의 프로젝트 닫기처럼 하위 디렉토리(git worktree 등)를 임시로 닫아 탐색기·검색·빠른 열기·Java 기호에서 뺍니다",
+  "extension.description": "이클립스의 프로젝트 닫기처럼 하위 디렉토리(git worktree 등)를 임시로 닫습니다. 탐색기에는 회색으로 남고 검색·빠른 열기·Java 기호에서는 빠집니다",
   "command.closeDirectory": "디렉토리 임시로 닫기",
   "command.reopenDirectory": "닫은 디렉토리 다시 열기",
-  "config.excludeFromJava": "닫은 디렉토리를 Java 프로젝트 불러오기(java.import.exclusions)에서도 제외합니다. 작업 영역의 기호로 이동(Ctrl+T)에서도 빠집니다."
+  "config.excludeFromJava": "닫은 디렉토리를 Java 프로젝트 불러오기(java.import.exclusions)에서도 제외합니다. 작업 영역의 기호로 이동(Ctrl+T)에서도 빠집니다.",
+  "command.reopenSelected": "디렉토리 다시 열기",
+  "config.closeStyle": "닫은 디렉토리를 탐색기에 어떻게 보일지 정합니다. 두 방식 모두 파일에서 찾기·빠른 열기에서는 제외됩니다.",
+  "config.closeStyle.dim": "탐색기에 회색으로 남깁니다 (search.exclude). 이클립스 프로젝트 닫기와 같은 방식입니다.",
+  "config.closeStyle.hide": "탐색기에서도 숨깁니다 (files.exclude)."
 }
