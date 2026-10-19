@@ -1,6 +1,6 @@
 # Folder Stash — 하위 디렉토리 임시 닫기/열기 (계획)
 
-- 상태: ✅ 구현 완료 · 0.10.0 (단위 테스트 37개 통과, 수동 확인 완료)
+- 상태: ✅ 구현 완료 · 0.11.0 (단위 테스트 38개 통과, 지워진 디렉토리 정리 수동 확인 전)
 - 작성: 2026-10-14 (KST)
 - 참고: [artern/vscode-workspace-folder-stash](https://github.com/artern/vscode-workspace-folder-stash) v0.1.1
 
@@ -80,7 +80,7 @@ uris ─► 루트 폴더 자신이면 제외 ─► 상대 경로 계산 ─►
 |---|---|---|---|
 | 있음 | 있음 | 있음 | 그대로 |
 | 있음 | **없음** | - | 사용자가 직접 열었다고 보고 목록과 java 항목에서 제거 |
-| 있음 | 있음 | **없음** | QuickPick 에 `(없음)` 으로 표시, 🗑 로 제거 |
+| 있음 | - | **없음** | 다시 연 것으로 보고 두 exclude·java 항목과 목록에서 제거 (13장) |
 
 ## 4. 구현 규칙
 
@@ -173,9 +173,10 @@ COVERAGE: 0/17 (신규 프로젝트) — 모두 구현과 함께 작성
 | src/stashStore.ts | workspaceState 어댑터 (`folderStash.closed:<폴더 URI>`), 변경 시 onChange |
 | src/closedView.ts | 탐색기 회색 표시(FileDecorationProvider), 컨텍스트 키 `folderStash.closedPaths` |
 | src/folders.ts | 워크스페이스 폴더 → StashFolder 변환 |
-| src/reopenQuickPick.ts | 다시 열기 QuickPick (다중 선택, 📂 바로 다시 열기, `(없음)`) |
+| src/missing.ts | 닫은 경로 중 디스크에서 지워졌거나 파일로 바뀐 것 찾기 |
+| src/reopenQuickPick.ts | 다시 열기 QuickPick (다중 선택, 📂 바로 다시 열기) |
 | src/extension.ts | 명령·이벤트 등록, Java 다시 불러오기 알림 |
-| test/*.test.ts | 단위 37개 (`npm test`) |
+| test/*.test.ts | 단위 38개 (`npm test`) |
 | package.sh | node_modules 없으면 `npm install` → 타입 체크·테스트 → vsix 생성 (실패 시 중단) |
 | install.sh | `package.sh` 실행 후 `code --install-extension --force` (같은 버전 덮어쓰기) |
 
@@ -259,6 +260,35 @@ COVERAGE: 0/17 (신규 프로젝트) — 모두 구현과 함께 작성
 6. Ctrl+T 로 회색 디렉토리에만 있는 클래스 검색 → 결과 없음 (Java 다시 불러오기 후)
 7. 회색 디렉토리 우클릭 → 디렉토리 다시 열기 → 색이 돌아오고 4~5 에서 다시 검색됨
 8. 설정 `folderStash.closeStyle` 을 `hide` 로 → 닫은 디렉토리가 탐색기에서 사라짐, 다시 `dim` 으로 → 회색으로 돌아옴
+
+## 13. 지워진 디렉토리 정리 · 0.11.0 (2026-10-19)
+
+worktree 를 지우면 닫은 기록(exclude 항목, java 절대 경로, 목록)이 남는다.
+같은 이름으로 다시 만들면 새 worktree 가 처음부터 검색에서 빠지는 문제가 있어 자동 정리한다.
+
+- 정리 시점: VS Code 열 때(`syncAll` 맨 앞), 닫기·다시 열기 명령 실행 직전 (`withPrune` → `pruneAll`)
+- 파일 감시는 쓰지 않는다 (단순하게 유지)
+- `findMissing` (`src/missing.ts`): 큐 밖에서 `stat` 을 병렬로 실행한다 (느린 원격에서도 다른 작업이 기다리지 않도록)
+  - `FileSystemError` `FileNotFound` 이거나 디렉토리가 아니면(파일로 바뀜, 끊어진 링크) 지워진 것으로 본다
+  - 원격 연결 전 등 다른 오류는 건너뛴다
+- 정리는 `StashService.reopen` 그대로 쓴다. 확인과 정리 사이에 목록이 바뀌어도 아직 목록에 있는 항목만 처리된다
+- 알림: "디스크에서 지워진 닫은 디렉토리를 정리했습니다: wt1, wt2"
+- Java 다시 불러오기는 명령마다 한 번만 제안한다
+  - 닫기에서 Java 가 바뀌면 `java.clean.workspace` 하나로 (정리 결과까지 포함)
+  - 정리만 바뀌었으면 `java.project.import.command`
+  - 멀티 루트에서도 폴더별로 따로 묻지 않는다
+- 다시 열기 목록의 `(없음)` 표시는 없앴다 (열기 직전에 정리되므로)
+- 제약: 다른 브랜치로 바꿔 디렉토리가 잠깐 없는 상태에서 닫기/열기를 하면 그 디렉토리도 정리된다.
+  돌아온 뒤 다시 닫으면 된다 (README 안내)
+
+리뷰 반영 (같은 날): 확인을 큐 밖 병렬로, `StashService.prune` 대신 `reopen` 재사용, Java 알림 한 번으로,
+파일로 바뀐 경로도 정리, 알림에 경로 이름 표시, `findMissing` 테스트 추가.
+
+수동 확인
+1. 디렉토리를 닫고 디스크에서 지운 뒤 다른 디렉토리를 닫기 → 정리 알림, settings.json 에서 항목 제거
+2. 지운 상태로 창 다시 로드 → 정리 알림
+3. 같은 이름으로 다시 만들면 회색이 아니고 검색에 나옴
+4. (가능하면) Remote-SSH/WSL 에서 1번 반복
 
 ## GSTACK REVIEW REPORT
 

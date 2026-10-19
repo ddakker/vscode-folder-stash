@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { ClosedView } from './closedView';
 import { toStashFolder, workspaceFolders } from './folders';
 import { t } from './messages';
+import { findMissing } from './missing';
 import { showReopenQuickPick } from './reopenQuickPick';
 import { VscodeSettings } from './settingsWriter';
 import { CloseStyle, toPosix } from './stashCore';
@@ -26,28 +27,28 @@ export function activate(context: vscode.ExtensionContext): void {
     view,
     vscode.window.registerFileDecorationProvider(view),
     vscode.commands.registerCommand('folderStash.closeDirectory', (uri?: vscode.Uri, uris?: vscode.Uri[]) =>
-      closeDirectories(service, selectedUris(uri, uris)),
+      withPrune(service, JAVA_RELOAD_COMMAND.close, () => closeDirectories(service, selectedUris(uri, uris))),
     ),
     vscode.commands.registerCommand('folderStash.reopenSelected', (uri?: vscode.Uri, uris?: vscode.Uri[]) =>
-      reopenSelected(service, selectedUris(uri, uris)),
+      withPrune(service, JAVA_RELOAD_COMMAND.reopen, () => reopenSelected(service, selectedUris(uri, uris))),
     ),
     vscode.commands.registerCommand('folderStash.reopenDirectory', () =>
-      showReopenQuickPick(service, workspaceFolders(), (folder, relPaths) =>
-        reopenDirectories(service, folder, relPaths),
-      ),
+      withPrune(service, JAVA_RELOAD_COMMAND.reopen, () => showReopenList(service)),
     ),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('folderStash.closeStyle')) {
         void syncAll(service);
       } else if (e.affectsConfiguration('files.exclude') || e.affectsConfiguration('search.exclude')) {
-        void reconcileAll(service);
+        void reconcileAll(service).then(offerReopenReload);
       }
     }),
     vscode.workspace.onDidChangeWorkspaceFolders(async (e) => {
+      let javaChanged = false;
       for (const removed of e.removed) {
-        handleResult(await service.releaseJava(toStashFolder(removed)).catch(showError));
+        javaChanged = warnJavaError(await service.releaseJava(toStashFolder(removed)).catch(showError)) || javaChanged;
       }
-      await reconcileAll(service);
+      javaChanged = (await reconcileAll(service)) || javaChanged;
+      offerReopenReload(javaChanged);
       view?.refresh();
     }),
   );
@@ -58,11 +59,11 @@ export function activate(context: vscode.ExtensionContext): void {
 
 export function deactivate(): void {}
 
-async function closeDirectories(service: StashService, uris: vscode.Uri[]): Promise<void> {
+async function closeDirectories(service: StashService, uris: vscode.Uri[]): Promise<boolean> {
   const groups = await groupDirectoriesByFolder(uris);
   if (groups.size === 0) {
     void vscode.window.showInformationMessage(t('noTarget'));
-    return;
+    return false;
   }
 
   const options = { style: closeStyle(), excludeFromJava: shouldExcludeFromJava() };
@@ -74,7 +75,7 @@ async function closeDirectories(service: StashService, uris: vscode.Uri[]): Prom
       const result = await service.close(folder, relPaths, options);
       closed += result.changed.length;
       javaChanged ||= result.javaChanged;
-      skipped.push(...result.skipped.map((relPath) => (groups.size > 1 ? `${name}/${relPath}` : relPath)));
+      skipped.push(...result.skipped.map((relPath) => displayPath(name, relPath, groups.size > 1)));
     }
   } catch (err) {
     showError(err);
@@ -86,49 +87,101 @@ async function closeDirectories(service: StashService, uris: vscode.Uri[]): Prom
   if (skipped.length > 0) {
     void vscode.window.showWarningMessage(t('alreadyClosed', skipped.join(', ')));
   }
-  if (javaChanged) {
-    void offerJavaReload(JAVA_RELOAD_COMMAND.close);
-  }
+  return javaChanged;
 }
 
-async function reopenDirectories(service: StashService, folder: StashFolder, relPaths: string[]): Promise<void> {
+/** 다시 열고 Java 가 바뀌었는지 돌려준다 */
+async function reopenDirectories(service: StashService, folder: StashFolder, relPaths: string[]): Promise<boolean> {
   const result = await service.reopen(folder, relPaths).catch(showError);
   if (result && result.changed.length > 0) {
     void vscode.window.showInformationMessage(t('reopened', result.changed.length));
   }
-  handleResult(result);
+  return warnJavaError(result);
 }
 
 /** 탐색기에서 회색 디렉토리를 우클릭해 바로 다시 연다 */
-async function reopenSelected(service: StashService, uris: vscode.Uri[]): Promise<void> {
+async function reopenSelected(service: StashService, uris: vscode.Uri[]): Promise<boolean> {
+  let javaChanged = false;
   for (const { folder, relPaths } of (await groupDirectoriesByFolder(uris)).values()) {
-    await reopenDirectories(service, folder, relPaths.map(toPosix));
+    javaChanged = (await reopenDirectories(service, folder, relPaths.map(toPosix))) || javaChanged;
+  }
+  return javaChanged;
+}
+
+/** 목록은 띄우기만 하고 바로 돌아온다. 고른 뒤의 Java 다시 불러오기는 목록에서 직접 제안한다 */
+async function showReopenList(service: StashService): Promise<boolean> {
+  await showReopenQuickPick(service, workspaceFolders(), async (folder, relPaths) =>
+    offerReopenReload(await reopenDirectories(service, folder, relPaths)),
+  );
+  return false;
+}
+
+/** 지워진 디렉토리를 먼저 정리하고 명령을 실행한다. Java 다시 불러오기는 한 번만 제안한다 */
+async function withPrune(service: StashService, reloadCommand: string, action: () => Promise<boolean>): Promise<void> {
+  const pruned = await pruneAll(service);
+  if (await action()) {
+    void offerJavaReload(reloadCommand);
+  } else {
+    offerReopenReload(pruned);
   }
 }
 
-/** 직접 지운 항목을 먼저 목록에서 빼고, 남은 항목을 현재 닫는 방식의 설정으로 옮긴다 */
+/** 디스크에서 지워진 닫은 디렉토리는 다시 연 것으로 정리한다. Java 가 바뀌었는지 돌려준다 */
+async function pruneAll(service: StashService): Promise<boolean> {
+  const folders = workspaceFolders();
+  const pruned: string[] = [];
+  let javaChanged = false;
+  for (const { folder, name } of folders) {
+    const missing = await findMissing(folder, service.list(folder));
+    if (missing.length === 0) {
+      continue;
+    }
+    // 확인과 정리 사이에 목록이 바뀌어도 reopen 은 아직 목록에 있는 항목만 처리한다
+    const result = await service.reopen(folder, missing).catch(showError);
+    pruned.push(...(result?.changed ?? []).map((relPath) => displayPath(name, relPath, folders.length > 1)));
+    javaChanged = warnJavaError(result) || javaChanged;
+  }
+  if (pruned.length > 0) {
+    void vscode.window.showInformationMessage(t('pruned', pruned.join(', ')));
+  }
+  return javaChanged;
+}
+
+/** 지워진 디렉토리와 직접 지운 항목을 먼저 정리하고, 남은 항목을 현재 닫는 방식의 설정으로 옮긴다 */
 async function syncAll(service: StashService): Promise<void> {
-  await reconcileAll(service);
+  const pruned = await pruneAll(service);
+  offerReopenReload((await reconcileAll(service)) || pruned);
   for (const { folder } of workspaceFolders()) {
     await service.changeStyle(folder, closeStyle).catch(showError);
   }
 }
 
-/** 폴더 하나가 실패해도 나머지 폴더는 계속 맞춘다 */
-async function reconcileAll(service: StashService): Promise<void> {
+/** 폴더 하나가 실패해도 나머지 폴더는 계속 맞춘다. Java 가 바뀌었는지 돌려준다 */
+async function reconcileAll(service: StashService): Promise<boolean> {
+  let javaChanged = false;
   for (const { folder } of workspaceFolders()) {
-    handleResult(await service.reconcile(folder).catch(showError));
+    javaChanged = warnJavaError(await service.reconcile(folder).catch(showError)) || javaChanged;
   }
+  return javaChanged;
 }
 
-/** 제거 방향 결과 처리: Java 쓰기 실패는 경고만, 바뀌었으면 다시 불러오기를 제안한다 */
-function handleResult(result: ChangeResult | undefined): void {
+/** 제거 방향 결과의 Java 쓰기 실패를 경고하고, Java 가 바뀌었는지 돌려준다 */
+function warnJavaError(result: ChangeResult | undefined): boolean {
   if (result?.javaError !== undefined) {
     void vscode.window.showWarningMessage(t('javaFailed', errorMessage(result.javaError)));
   }
-  if (result?.javaChanged) {
+  return result?.javaChanged ?? false;
+}
+
+function offerReopenReload(javaChanged: boolean): void {
+  if (javaChanged) {
     void offerJavaReload(JAVA_RELOAD_COMMAND.reopen);
   }
+}
+
+/** 멀티 루트에서는 폴더 이름을 앞에 붙인다 */
+function displayPath(name: string, relPath: string, multiRoot: boolean): string {
+  return multiRoot ? `${name}/${relPath}` : relPath;
 }
 
 /** 디렉토리만 골라 워크스페이스 폴더별로 묶는다. 루트 폴더 자신과 파일은 제외한다 */

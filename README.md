@@ -33,7 +33,9 @@ To pick from a list (or in `hide` style), right-click anywhere in the Explorer o
 ![Reopen picker](images/reopen-en.png)
 
 - 📂 button (Reopen now): reopen just that directory immediately
-- `(missing)`: the directory was deleted from disk (clean up with 📂)
+- Closed directories deleted from disk (e.g. a removed worktree) are cleaned up automatically
+  when VS Code starts or when you close/reopen directories.
+  This also happens while a directory is temporarily gone (e.g. after switching branches); just close it again.
 
 ## Where closed directories disappear
 

@@ -17,7 +17,7 @@ export async function showReopenQuickPick(
   folders: { folder: StashFolder; name: string }[],
   reopen: ReopenHandler,
 ): Promise<void> {
-  const items = await buildItems(service, folders);
+  const items = buildItems(service, folders);
   if (items.length === 0) {
     void vscode.window.showInformationMessage(t('nothingClosed'));
     return;
@@ -30,7 +30,7 @@ export async function showReopenQuickPick(
 
   pick.onDidTriggerItemButton(async ({ item }) => {
     await reopen(item.folder, [item.relPath]);
-    pick.items = await buildItems(service, folders);
+    pick.items = buildItems(service, folders);
     if (pick.items.length === 0) {
       pick.hide();
     }
@@ -46,30 +46,16 @@ export async function showReopenQuickPick(
   pick.show();
 }
 
-async function buildItems(
-  service: StashService,
-  folders: { folder: StashFolder; name: string }[],
-): Promise<ClosedItem[]> {
+function buildItems(service: StashService, folders: { folder: StashFolder; name: string }[]): ClosedItem[] {
   const multiRoot = folders.length > 1;
   const reopenButton = { iconPath: new vscode.ThemeIcon('folder-opened'), tooltip: t('reopenNow') };
   const items: ClosedItem[] = [];
   for (const { folder, name } of folders) {
     for (const relPath of service.list(folder)) {
-      const missing = !(await exists(vscode.Uri.joinPath(vscode.Uri.parse(folder.key), relPath)));
-      const description = [multiRoot ? name : '', missing ? t('missing') : ''].filter(Boolean).join(' ');
-      items.push({ label: relPath, description, folder, relPath, buttons: [reopenButton] });
+      items.push({ label: relPath, description: multiRoot ? name : '', folder, relPath, buttons: [reopenButton] });
     }
   }
   return items;
-}
-
-async function exists(uri: vscode.Uri): Promise<boolean> {
-  try {
-    await vscode.workspace.fs.stat(uri);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function groupByFolder(items: ClosedItem[]): Map<StashFolder, string[]> {
